@@ -1,0 +1,5 @@
+{
+  "name": "SEO Intelligence Engine",
+  "description": "A React-based SEO metadata generator powered by Gemini 2.5, featuring Google Sheets integration for automated workflow.",
+  "requestFramePermissions": []
+}
