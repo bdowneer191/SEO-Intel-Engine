@@ -1,5 +1,5 @@
 import { GoogleGenAI, Schema, Type } from "@google/genai";
-import { SeoRequest, SeoResult, KeywordIdea } from '../types';
+import { SeoRequest, SeoResult, KeywordIdea, GroundingSource } from '../types';
 import { SYSTEM_INSTRUCTION, AVAILABLE_CATEGORIES } from '../constants';
 
 const responseSchema: Schema = {
@@ -12,6 +12,10 @@ const responseSchema: Schema = {
     keywordDifficulty: {
       type: Type.NUMBER,
       description: "Estimated difficulty (0-100).",
+    },
+    intent: {
+      type: Type.STRING,
+      description: "Primary user search intent (e.g., Informational, Transactional, Navigational, Commercial).",
     },
     seoTitle: {
       type: Type.STRING,
@@ -37,7 +41,7 @@ const responseSchema: Schema = {
         description: "1 or 2 relevant categories from the provided list.",
     }
   },
-  required: ["primaryKeyword", "keywordDifficulty", "seoTitle", "secondaryKeywords", "metaDescription", "tags", "category"],
+  required: ["primaryKeyword", "keywordDifficulty", "intent", "seoTitle", "secondaryKeywords", "metaDescription", "tags", "category"],
 };
 
 const keywordIdeasSchema: Schema = {
@@ -72,7 +76,7 @@ export const generateSeoData = async (request: SeoRequest): Promise<SeoResult> =
   // The User's Specific Prompt
   const prompt = `
     **TASK:** Analyze the following topic and generate strategic, unique, and SEO-friendly metadata. 
-    Simulate a search for top ranking pages to ensure the new title is competitive and unique.
+    Use the provided search tool to find current top ranking pages to ensure the new title is competitive and unique.
     
     **INPUTS:**
     *   **Topic:** "${request.topic}"
@@ -81,14 +85,16 @@ export const generateSeoData = async (request: SeoRequest): Promise<SeoResult> =
 
     **REQUIREMENTS:**
     1.  **Primary Keyword:** One main target keyword.
-    2.  **SEO Title:** One keyword-targeted, relevant, and catchy title. 
+    2.  **Keyword Difficulty:** Estimated ranking difficulty (0-100).
+    3.  **Search Intent:** Analyze if the intent is Informational, Transactional, Navigational, or Commercial investigation.
+    4.  **SEO Title:** One keyword-targeted, relevant, and catchy title. 
         *   Avoid derogatory nicknames or slang.
         *   Make it meaningful.
         *   **NEVER** use the exact same title as the source/context provided.
-    3.  **Secondary Keywords:** 5-6 comma-separated secondary keywords (LSI).
-    4.  **Meta Description:** Compelling, click-worthy description (max 155 chars).
-    5.  **Tags:** 4-5 comma-separated tags.
-    6.  **Category:** Choose 1 or 2 relevant categories strictly from this list:
+    5.  **Secondary Keywords:** 5-6 comma-separated secondary keywords (LSI).
+    6.  **Meta Description:** Compelling, click-worthy description (max 155 chars).
+    7.  **Tags:** 4-5 comma-separated tags.
+    8.  **Category:** Choose 1 or 2 relevant categories strictly from this list:
         [${categoriesString}]
 
     **OUTPUT FORMAT:**
@@ -103,6 +109,7 @@ export const generateSeoData = async (request: SeoRequest): Promise<SeoResult> =
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
         responseSchema: responseSchema,
+        tools: [{ googleSearch: {} }], // Enable search grounding
         safetySettings: [
           { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
           { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
@@ -131,15 +138,24 @@ export const generateSeoData = async (request: SeoRequest): Promise<SeoResult> =
     }
 
     const parsed = JSON.parse(text);
+
+    // Extract grounding sources
+    const groundingChunks = candidate.groundingMetadata?.groundingChunks;
+    const groundingSources: GroundingSource[] = groundingChunks?.map((chunk: any) => ({
+      title: chunk.web?.title || 'Search Result',
+      uri: chunk.web?.uri || ''
+    })).filter((s: GroundingSource) => s.uri !== '') || [];
     
     return {
       primaryKeyword: parsed.primaryKeyword || "",
       keywordDifficulty: typeof parsed.keywordDifficulty === 'number' ? parsed.keywordDifficulty : 50,
+      intent: parsed.intent || "Informational",
       seoTitle: parsed.seoTitle || "",
       secondaryKeywords: Array.isArray(parsed.secondaryKeywords) ? parsed.secondaryKeywords : [],
       metaDescription: parsed.metaDescription || "",
       tags: Array.isArray(parsed.tags) ? parsed.tags : [],
       category: Array.isArray(parsed.category) ? parsed.category : [],
+      groundingSources: groundingSources.length > 0 ? groundingSources : undefined,
     };
   } catch (error: any) {
     console.error("Gemini API Error:", error);

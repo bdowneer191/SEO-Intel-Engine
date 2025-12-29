@@ -1,6 +1,7 @@
+
 import React from 'react';
-import { Copy, Check, FileText, Tag, Search, Globe, Hash, Folder } from 'lucide-react';
-import { SeoResult } from '../types';
+import { Copy, Check, FileText, Tag, Search, Globe, Hash, Folder, MousePointerClick, ExternalLink, ShieldCheck } from 'lucide-react';
+import { SeoResult, GroundingSource } from '../types';
 import { Card, Badge } from './UiComponents';
 
 interface ResultDisplayProps {
@@ -33,6 +34,14 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
     if (score < 30) return 'bg-emerald-500 text-emerald-500';
     if (score < 60) return 'bg-yellow-500 text-yellow-500';
     return 'bg-red-500 text-red-500';
+  };
+
+  const getIntentColor = (intent: string) => {
+    const lowIntent = intent.toLowerCase();
+    if (lowIntent.includes('transactional')) return 'bg-orange-900/30 text-orange-400 border-orange-700/30';
+    if (lowIntent.includes('commercial')) return 'bg-blue-900/30 text-blue-400 border-blue-700/30';
+    if (lowIntent.includes('navigational')) return 'bg-purple-900/30 text-purple-400 border-purple-700/30';
+    return 'bg-emerald-900/30 text-emerald-400 border-emerald-700/30'; // Informational default
   };
 
   const diffColor = getDifficultyColor(result.keywordDifficulty);
@@ -95,6 +104,21 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
           <p className="text-xl font-bold text-white">{result.primaryKeyword}</p>
         </Card>
 
+        {/* Intent Analysis */}
+        <Card className="relative overflow-hidden group hover:border-brand-500/30 transition-colors">
+          <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+            <CopyButton text={result.intent} />
+          </div>
+          <div className="flex items-center space-x-3 mb-3">
+            <div className="p-2 bg-pink-500/10 rounded-lg text-pink-400">
+              <MousePointerClick size={20} />
+            </div>
+            <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Search Intent</h3>
+          </div>
+          <Badge color={getIntentColor(result.intent)}>{result.intent}</Badge>
+          <p className="text-xs text-slate-500 mt-2">Targeting users with {result.intent.toLowerCase()} interest.</p>
+        </Card>
+
          {/* SEO Title */}
          <Card className="relative overflow-hidden group hover:border-brand-500/30 transition-colors md:col-span-2">
           <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -129,6 +153,35 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
         </div>
         <p className="text-slate-300 leading-relaxed">{result.metaDescription}</p>
       </Card>
+
+      {/* Grounding Sources (Search Results) */}
+      {result.groundingSources && result.groundingSources.length > 0 && (
+        <Card className="relative group hover:border-emerald-500/30 transition-colors">
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
+              <ShieldCheck size={20} />
+            </div>
+            <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Grounding Sources (Google Search)</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {result.groundingSources.map((source, i) => (
+              <a 
+                key={i} 
+                href={source.uri} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center justify-between p-3 bg-slate-900/50 border border-slate-800 rounded-lg hover:border-emerald-500/50 hover:bg-slate-800 transition-all group/link"
+              >
+                <div className="flex flex-col min-w-0 pr-2">
+                  <span className="text-xs font-semibold text-slate-200 truncate">{source.title}</span>
+                  <span className="text-[10px] text-slate-500 truncate">{new URL(source.uri).hostname}</span>
+                </div>
+                <ExternalLink size={14} className="text-slate-600 group-hover/link:text-emerald-400 shrink-0" />
+              </a>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Category */}

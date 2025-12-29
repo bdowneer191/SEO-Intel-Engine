@@ -1,3 +1,9 @@
+
+export interface GroundingSource {
+  title: string;
+  uri: string;
+}
+
 export interface SeoRequest {
   topic: string;
   geo?: string;
@@ -9,11 +15,13 @@ export interface SeoRequest {
 export interface SeoResult {
   primaryKeyword: string;
   keywordDifficulty: number;
+  intent: string;
   seoTitle: string;
   secondaryKeywords: string[];
   metaDescription: string;
   tags: string[];
-  category: string[]; // Added category support
+  category: string[];
+  groundingSources?: GroundingSource[]; // Added for search grounding support
 }
 
 export interface SheetConfig {
