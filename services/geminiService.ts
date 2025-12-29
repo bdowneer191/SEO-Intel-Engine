@@ -1,104 +1,47 @@
-import { GoogleGenAI, Schema, Type } from "@google/genai";
+
+import { GoogleGenAI, Schema, Type, GenerateContentResponse } from "@google/genai";
 import { SeoRequest, SeoResult, KeywordIdea, GroundingSource } from '../types';
 import { SYSTEM_INSTRUCTION, AVAILABLE_CATEGORIES } from '../constants';
 
+// Standardized SEO Response Schema
 const responseSchema: Schema = {
   type: Type.OBJECT,
   properties: {
-    primaryKeyword: {
-      type: Type.STRING,
-      description: "One single targeted keyword.",
-    },
-    keywordDifficulty: {
-      type: Type.NUMBER,
-      description: "Estimated difficulty (0-100).",
-    },
-    intent: {
-      type: Type.STRING,
-      description: "Primary user search intent (e.g., Informational, Transactional, Navigational, Commercial).",
-    },
-    seoTitle: {
-      type: Type.STRING,
-      description: "One keyword targeted relevant title. Unique. No slang.",
-    },
-    secondaryKeywords: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: "5-6 comma separated secondary keywords.",
-    },
-    metaDescription: {
-      type: Type.STRING,
-      description: "One keyword targeted 155 character meta description.",
-    },
-    tags: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: "4-5 comma separated tags.",
-    },
-    category: {
-        type: Type.ARRAY,
-        items: { type: Type.STRING },
-        description: "1 or 2 relevant categories from the provided list.",
-    }
+    primaryKeyword: { type: Type.STRING },
+    keywordDifficulty: { type: Type.NUMBER },
+    intent: { type: Type.STRING },
+    seoTitle: { type: Type.STRING },
+    secondaryKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+    metaDescription: { type: Type.STRING },
+    tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+    category: { type: Type.ARRAY, items: { type: Type.STRING } }
   },
   required: ["primaryKeyword", "keywordDifficulty", "intent", "seoTitle", "secondaryKeywords", "metaDescription", "tags", "category"],
 };
 
-const keywordIdeasSchema: Schema = {
-  type: Type.OBJECT,
-  properties: {
-    ideas: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          keyword: { type: Type.STRING },
-          intent: { type: Type.STRING },
-          difficulty: { type: Type.STRING },
-          volume: { type: Type.STRING }
-        },
-        required: ["keyword", "intent", "difficulty", "volume"]
-      }
-    }
-  }
-};
-
+/**
+ * GENERATE SEO DATA
+ * Optimized for gemini-3-flash-preview with Search Grounding
+ */
 export const generateSeoData = async (request: SeoRequest): Promise<SeoResult> => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("API Key is missing. Please set it in the environment.");
-  }
+  if (!apiKey) throw new Error("Backend Error: API_KEY environment variable is not configured.");
 
   const ai = new GoogleGenAI({ apiKey });
-
   const categoriesString = AVAILABLE_CATEGORIES.join(', ');
 
-  // The User's Specific Prompt
   const prompt = `
-    **TASK:** Analyze the following topic and generate strategic, unique, and SEO-friendly metadata. 
-    Use the provided search tool to find current top ranking pages to ensure the new title is competitive and unique.
-    
-    **INPUTS:**
-    *   **Topic:** "${request.topic}"
-    *   **Context/Source Title:** "${request.context || 'N/A'}"
-    *   **Geo:** "${request.geo || 'Global'}"
+    **TASK:** Elite SEO Analysis and Content Intelligence.
+    **TOPIC:** "${request.topic}"
+    **SOURCE CONTEXT:** "${request.context || 'N/A'}"
+    **GEO:** "${request.geo || 'Global'}"
+    **ALLOWED CATEGORIES:** [${categoriesString}]
 
-    **REQUIREMENTS:**
-    1.  **Primary Keyword:** One main target keyword.
-    2.  **Keyword Difficulty:** Estimated ranking difficulty (0-100).
-    3.  **Search Intent:** Analyze if the intent is Informational, Transactional, Navigational, or Commercial investigation.
-    4.  **SEO Title:** One keyword-targeted, relevant, and catchy title. 
-        *   Avoid derogatory nicknames or slang.
-        *   Make it meaningful.
-        *   **NEVER** use the exact same title as the source/context provided.
-    5.  **Secondary Keywords:** 5-6 comma-separated secondary keywords (LSI).
-    6.  **Meta Description:** Compelling, click-worthy description (max 155 chars).
-    7.  **Tags:** 4-5 comma-separated tags.
-    8.  **Category:** Choose 1 or 2 relevant categories strictly from this list:
-        [${categoriesString}]
-
-    **OUTPUT FORMAT:**
-    Return ONLY valid JSON matching the schema.
+    **INSTRUCTIONS:**
+    1. Perform search grounding to find top current ranking titles.
+    2. Create a UNIQUE SEO Title (don't copy context).
+    3. Analyze Search Intent (Informational, Transactional, etc).
+    4. Output metadata optimized for both Google and AI search engines.
   `;
 
   try {
@@ -109,7 +52,7 @@ export const generateSeoData = async (request: SeoRequest): Promise<SeoResult> =
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
         responseSchema: responseSchema,
-        tools: [{ googleSearch: {} }], // Enable search grounding
+        tools: [{ googleSearch: {} }],
         safetySettings: [
           { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
           { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
@@ -120,26 +63,17 @@ export const generateSeoData = async (request: SeoRequest): Promise<SeoResult> =
       },
     });
 
-    // Enhanced Error Handling
-    if (!response.candidates || response.candidates.length === 0) {
-       throw new Error("Gemini returned no candidates. This can happen due to high traffic or regional restrictions. Please try again in a few seconds.");
-    }
-
+    if (!response.candidates?.[0]) throw new Error("AI Engine returned no candidates. Try a less restrictive topic.");
+    
     const candidate = response.candidates[0];
-
-    // Check for non-STOP finish reasons (Safety, Recitation, etc.)
-    if (candidate.finishReason && candidate.finishReason !== 'STOP') {
-        throw new Error(`Gemini blocked the response. Reason: ${candidate.finishReason}. This topic might be triggering sensitive filters.`);
-    }
+    if (candidate.finishReason !== 'STOP') throw new Error(`AI Blocked: ${candidate.finishReason}`);
 
     const text = response.text;
-    if (!text) {
-         throw new Error("Gemini returned an empty text response. Please try adjusting your topic or context.");
-    }
+    if (!text) throw new Error("AI returned empty result. Potential safety filter trigger.");
 
     const parsed = JSON.parse(text);
 
-    // Extract grounding sources
+    // Extraction logic for Grounding Sources
     const groundingChunks = candidate.groundingMetadata?.groundingChunks;
     const groundingSources: GroundingSource[] = groundingChunks?.map((chunk: any) => ({
       title: chunk.web?.title || 'Search Result',
@@ -147,33 +81,43 @@ export const generateSeoData = async (request: SeoRequest): Promise<SeoResult> =
     })).filter((s: GroundingSource) => s.uri !== '') || [];
     
     return {
-      primaryKeyword: parsed.primaryKeyword || "",
-      keywordDifficulty: typeof parsed.keywordDifficulty === 'number' ? parsed.keywordDifficulty : 50,
-      intent: parsed.intent || "Informational",
-      seoTitle: parsed.seoTitle || "",
-      secondaryKeywords: Array.isArray(parsed.secondaryKeywords) ? parsed.secondaryKeywords : [],
-      metaDescription: parsed.metaDescription || "",
-      tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-      category: Array.isArray(parsed.category) ? parsed.category : [],
+      ...parsed,
       groundingSources: groundingSources.length > 0 ? groundingSources : undefined,
     };
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    if (error instanceof SyntaxError) {
-        throw new Error("Gemini returned invalid JSON. Please try again.");
-    }
-    throw error;
+    console.error("Gemini Critical Error:", error);
+    throw new Error(error.message || "SEO Generation failed.");
   }
 };
 
+/**
+ * KEYWORD RESEARCH SUGGESTIONS
+ */
 export const generateKeywordIdeas = async (topic: string): Promise<KeywordIdea[]> => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("API Key is missing.");
+  if (!apiKey) throw new Error("API_KEY missing.");
 
   const ai = new GoogleGenAI({ apiKey });
+  const prompt = `Research 6-8 "Easy Win" high-potential keyword variations for: "${topic}". Include Intent, Difficulty (0-100), and Volume (High/Niche). Output JSON.`;
 
-  const prompt = `Generate 6-8 high-potential "Easy Win" SEO keyword variations for: "${topic}". 
-  Focus on terms with clear intent (Transactional or Commercial) that are likely to convert. Avoid generic terms with impossible difficulty.`;
+  const researchSchema: Schema = {
+    type: Type.OBJECT,
+    properties: {
+      ideas: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            keyword: { type: Type.STRING },
+            intent: { type: Type.STRING },
+            difficulty: { type: Type.STRING },
+            volume: { type: Type.STRING }
+          },
+          required: ["keyword", "intent", "difficulty", "volume"]
+        }
+      }
+    }
+  };
 
   try {
     const response = await ai.models.generateContent({
@@ -181,25 +125,15 @@ export const generateKeywordIdeas = async (topic: string): Promise<KeywordIdea[]
       contents: prompt,
       config: {
         responseMimeType: "application/json",
-        responseSchema: keywordIdeasSchema,
+        responseSchema: researchSchema,
         temperature: 0.7,
-        safetySettings: [
-          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'BLOCK_NONE' },
-        ],
       }
     });
 
-    const text = response.text;
-    if (!text) return [];
-    
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(response.text);
     return parsed.ideas || [];
   } catch (error) {
-    console.error("Keyword Research Error:", error);
-    throw error;
+    console.error("Research Engine Failed:", error);
+    return [];
   }
 };
