@@ -45,7 +45,9 @@ export default async function handler(req: Request) {
       }
     });
 
-    const text = response.text();
+    // FIXED: .text is a getter, not a function()
+    const text = response.text;
+    
     return new Response(text, {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
