@@ -1,10 +1,9 @@
-import { GoogleGenAI, Schema, Type } from "@google/genai";
+import { GoogleGenAI, Schema, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
 
 export const config = {
-  runtime: 'edge', // Uses Edge Runtime to avoid 10s Serverless timeout
+  runtime: 'edge', 
 };
 
-// Define Schema (Duplicated here to keep API self-contained)
 const responseSchema: Schema = {
   type: Type.OBJECT,
   properties: {
@@ -34,7 +33,6 @@ export default async function handler(req: Request) {
 
     const ai = new GoogleGenAI({ apiKey });
 
-    // Dynamic prompt construction
     const prompt = `
       **TASK:** Elite SEO Analysis for content type: "${contentType || 'Blog'}".
       **TOPIC:** "${topic}"
@@ -49,17 +47,17 @@ export default async function handler(req: Request) {
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash', // Upgraded to 2.0 Flash for speed/cost or keep 'gemini-1.5-flash'
+      model: 'gemini-2.0-flash',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: responseSchema,
-        tools: [{ googleSearch: {} }], // Search Grounding enabled
+        tools: [{ googleSearch: {} }],
         safetySettings: [
-          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
         ],
       },
     });
@@ -73,12 +71,13 @@ export default async function handler(req: Request) {
       uri: chunk.web?.uri || ''
     })).filter((s: any) => s.uri);
 
-    const text = response.text();
+    // FIXED: .text is a getter, not a function()
+    const text = response.text; 
+    
     if (!text) throw new Error("Empty response from AI");
 
     const parsedData = JSON.parse(text);
 
-    // Return combined data
     return new Response(JSON.stringify({
       ...parsedData,
       groundingSources
