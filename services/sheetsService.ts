@@ -1,30 +1,13 @@
 import { SheetTab, SeoResult } from '../types';
 import { DEFAULT_SPREADSHEET_ID } from '../constants';
 
-// Helper to validate token format (basic check)
-export const isValidToken = (token: string) => token && token.length > 20;
-
-// Helper to clean token (remove whitespace/quotes/Bearer prefix)
-const cleanToken = (token: string) => {
-    if (!token) return '';
-    
-    // 1. Handle JSON paste (e.g. user pasted {"access_token": "..."})
-    if (token.trim().startsWith('{')) {
-        try {
-            const parsed = JSON.parse(token);
-            if (parsed.access_token) return parsed.access_token;
-        } catch (e) {
-            // Not valid JSON, continue with standard cleaning
-        }
-    }
-
-    // 2. Robust cleanup sequence:
-    return token
-        .replace(/["']/g, '')
-        .replace(/^Authorization:\s*/i, '')
-        .replace(/^Bearer\s*/i, '')
-        .replace(/\s/g, '') 
-        .trim();
+// NEW: Function to get token from YOUR backend
+// This effectively logs in as the "Service Account Robot"
+const getServiceToken = async () => {
+  const res = await fetch('/api/get-sheet-token');
+  if (!res.ok) throw new Error("Failed to authenticate with Service Account");
+  const data = await res.json();
+  return data.accessToken;
 };
 
 // Helper to extract Spreadsheet ID from URL or raw ID
@@ -58,14 +41,15 @@ const handleGoogleApiError = async (response: Response, context: string, spreads
     }
 
     if (response.status === 401) {
-        throw new Error(`${context}: Access Token expired or invalid. Please generate a new one.`);
+        throw new Error(`${context}: Service Account Token expired. Please refresh the page.`);
     }
     
     if (response.status === 403) {
          if (spreadsheetId === DEFAULT_SPREADSHEET_ID) {
              throw new Error(`${context}: Permission denied (403). You are trying to access the Read-Only Template. Please make a copy of the sheet and use YOUR Spreadsheet ID.`);
          }
-         throw new Error(`${context}: Permission denied (403). The Google Account used to generate the token does NOT have access to this Sheet. Please check your Spreadsheet Share permissions.`);
+         // Updated error message for Service Accounts
+         throw new Error(`${context}: Permission denied (403). The Service Account does NOT have access to this Sheet. Please click "Share" in Google Sheets and invite the Service Account Email as an Editor.`);
     }
     
     if (response.status === 404) {
@@ -75,11 +59,10 @@ const handleGoogleApiError = async (response: Response, context: string, spreads
     throw new Error(`${context}: ${message}`);
 };
 
-export const fetchSheetTabs = async (spreadsheetId: string, accessToken: string): Promise<SheetTab[]> => {
-  if (!accessToken) throw new Error("Access Token is required to fetch sheets.");
-
+export const fetchSheetTabs = async (spreadsheetId: string, _unusedToken?: string): Promise<SheetTab[]> => {
+  // IGNORE the user token, get the Robot Token
+  const token = await getServiceToken();
   const cleanId = extractSpreadsheetId(spreadsheetId);
-  const token = cleanToken(accessToken);
 
   try {
     const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(cleanId)}?fields=sheets.properties`, {
@@ -105,13 +88,11 @@ export const fetchSheetTabs = async (spreadsheetId: string, accessToken: string)
 export const fetchTopicAndUrl = async (
   spreadsheetId: string,
   sheetName: string,
-  accessToken: string,
+  _unusedToken: string, // Kept for signature compatibility
   row?: number
 ): Promise<{ topic: string; url: string; row: number }> => {
-  if (!accessToken) throw new Error("Access Token is required.");
-
+  const token = await getServiceToken();
   const cleanId = extractSpreadsheetId(spreadsheetId);
-  const token = cleanToken(accessToken);
   
   try {
     // 1. Fetch Header Row (Row 1)
@@ -209,12 +190,10 @@ export const writeSeoToSheet = async (
   sheetName: string,
   row: number,
   data: SeoResult,
-  accessToken: string
+  _unusedToken: string // Kept for signature compatibility
 ): Promise<void> => {
-  if (!accessToken) throw new Error("Access Token is required.");
-
+  const token = await getServiceToken();
   const cleanId = extractSpreadsheetId(spreadsheetId);
-  const token = cleanToken(accessToken);
 
   try {
     const encodedHeaderRange = encodeURIComponent(`${sheetName}!1:1`);
