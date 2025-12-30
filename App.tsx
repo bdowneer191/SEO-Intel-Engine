@@ -6,14 +6,13 @@ import { ResultDisplay } from './components/ResultDisplay';
 import { SheetIntegration } from './components/SheetIntegration';
 import { KeywordResearchModal } from './components/KeywordResearchModal';
 import { Button, InputLabel, Card, Badge } from './components/UiComponents';
-import { Sparkles, Target, MapPin, Briefcase, MessageSquare, AlertCircle, CheckCircle, Database, PenTool, ExternalLink, RefreshCw, ArrowDownCircle, Microscope, X, Layers, AlertTriangle, Trash2, Link, Lock, Settings } from 'lucide-react';
+import { Sparkles, Target, MapPin, Briefcase, AlertCircle, CheckCircle, Database, Link, ArrowDownCircle, Microscope, X, Layers, Trash2 } from 'lucide-react';
 import { DEFAULT_SPREADSHEET_ID, CONTENT_TYPES } from './constants';
 
 export default function App() {
   // Input Mode State
   const [inputMode, setInputMode] = useState<'manual' | 'sheet'>('manual');
   const [isResearchModalOpen, setIsResearchModalOpen] = useState(false);
-  const [showTokenInput, setShowTokenInput] = useState(false); // Toggle for token visibility
 
   // SEO Request State
   const [request, setRequest] = useState<SeoRequest>({
@@ -28,15 +27,14 @@ export default function App() {
   const [sheetState, setSheetState] = useState<SheetState>(() => {
     if (typeof window !== 'undefined') {
       const savedConfig = localStorage.getItem('sheet_config');
-      const savedToken = localStorage.getItem('google_access_token');
-      let config = { spreadsheetId: '', accessToken: '', selectedTab: '', rowNumber: '', tabs: [] };
+      // Removed savedToken logic as it's now handled by backend
+      let config = { spreadsheetId: '', accessToken: '', selectedTab: '', rowNumber: '', tabs: [] }; // accessToken is technically unused but kept for type compatibility if needed, or can be removed from type
       
       try {
         if (savedConfig) {
           const parsed = JSON.parse(savedConfig);
           config = { ...config, ...parsed, tabs: [] };
         }
-        if (savedToken) config.accessToken = savedToken;
       } catch (e) {}
       return config;
     }
@@ -45,7 +43,8 @@ export default function App() {
 
   // Initialize tabs if we have a saved sheet ID on load
   useEffect(() => {
-    if (sheetState.spreadsheetId && sheetState.accessToken && sheetState.tabs.length === 0) {
+    // Removed token check
+    if (sheetState.spreadsheetId && sheetState.tabs.length === 0) {
        // Attempt to restore session (optional, can be triggered manually to avoid errors on load)
        // handleFetchTabs(); 
     }
@@ -62,9 +61,7 @@ export default function App() {
       selectedTab: sheetState.selectedTab,
       rowNumber: sheetState.rowNumber
     }));
-    if (sheetState.accessToken) {
-        localStorage.setItem('google_access_token', sheetState.accessToken);
-    }
+    // Removed token persistence
   }, [sheetState]);
 
   const showNotification = (type: 'success' | 'error', message: string) => {
@@ -76,17 +73,17 @@ export default function App() {
 
   const handleFetchTabs = async () => {
     if (!sheetState.spreadsheetId) return showNotification('error', 'Enter a Spreadsheet ID');
-    if (!sheetState.accessToken) return showNotification('error', 'Google Token is required to access your sheet.');
+    // Removed token validation check
     
     setStatus(AppStatus.FETCHING_SHEET);
     try {
-      const tabs = await fetchSheetTabs(sheetState.spreadsheetId, sheetState.accessToken);
+      // Pass empty string for token, service handles it
+      const tabs = await fetchSheetTabs(sheetState.spreadsheetId, '');
       setSheetState(prev => ({ 
           ...prev, 
           tabs,
           selectedTab: tabs.length > 0 ? tabs[0].title : '' 
       }));
-      setShowTokenInput(false); // Auto-hide token on success
       showNotification('success', 'Sheet connected successfully.');
     } catch (error: any) {
       showNotification('error', error.message || 'Failed to load tabs.');
@@ -107,7 +104,7 @@ export default function App() {
       const { topic, url, row } = await fetchTopicAndUrl(
         sheetState.spreadsheetId, 
         sheetState.selectedTab, 
-        sheetState.accessToken,
+        '', // Empty token
         sheetState.rowNumber ? parseInt(sheetState.rowNumber) : undefined
       );
       setRequest(prev => ({ ...prev, topic, context: `Source URL: ${url}` }));
@@ -137,7 +134,6 @@ export default function App() {
   };
 
   const isSheetConnected = sheetState.tabs.length > 0;
-  const hasSavedToken = !!sheetState.accessToken && sheetState.accessToken.length > 10;
 
   return (
     <div className="min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-slate-950 text-slate-200 font-sans selection:bg-brand-500/30">
@@ -184,50 +180,7 @@ export default function App() {
                 <Card className="bg-slate-900/80 border-brand-500/30 animate-in fade-in slide-in-from-top-2">
                     <div className="space-y-4">
                         
-                        {/* 1. ACCESS TOKEN (Collapsible) */}
-                        <div className="border-b border-slate-800 pb-4">
-                            <div className="flex justify-between items-center mb-2">
-                                <div className="flex items-center gap-2">
-                                    <Lock size={12} className={hasSavedToken ? "text-green-400" : "text-slate-500"} />
-                                    <InputLabel label="Google Access Token" />
-                                </div>
-                                <button 
-                                    onClick={() => setShowTokenInput(!showTokenInput)} 
-                                    className="text-[10px] text-brand-400 hover:text-brand-300 underline"
-                                >
-                                    {showTokenInput ? 'Hide' : (hasSavedToken ? 'Configure' : 'Add Token')}
-                                </button>
-                            </div>
-                            
-                            {/* Hidden State */}
-                            {!showTokenInput && hasSavedToken && (
-                                <div className="flex items-center gap-2 text-xs text-green-400 bg-green-900/10 p-2 rounded border border-green-900/30">
-                                    <CheckCircle size={12} />
-                                    <span>Token saved securely in browser.</span>
-                                </div>
-                            )}
-
-                            {/* Visible Input State */}
-                            {(showTokenInput || !hasSavedToken) && (
-                                <div className="animate-in fade-in duration-200">
-                                    <input
-                                        type="password"
-                                        value={sheetState.accessToken}
-                                        onChange={(e) => setSheetState({...sheetState, accessToken: e.target.value})}
-                                        placeholder="Paste OAuth token (ya29...)"
-                                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs focus:ring-1 focus:ring-brand-500 font-mono"
-                                    />
-                                    <div className="flex justify-between items-center mt-2">
-                                        <p className="text-[10px] text-slate-500">Required for Sheet Read/Write access.</p>
-                                        <a href="https://developers.google.com/oauthplayground" target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-white">
-                                            Get Token <ExternalLink size={10}/>
-                                        </a>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* 2. SPREADSHEET URL / ID */}
+                        {/* 1. SPREADSHEET URL / ID */}
                         <div>
                              <InputLabel label="Spreadsheet Connection" />
                              
@@ -266,7 +219,7 @@ export default function App() {
                              )}
                         </div>
 
-                        {/* 3. ROW SELECTION (Only visible if connected) */}
+                        {/* 2. ROW SELECTION (Only visible if connected) */}
                         {isSheetConnected && (
                             <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800/50">
                                 <div>
@@ -394,7 +347,7 @@ export default function App() {
                     seoResult={result} 
                     sheetState={sheetState} 
                     onStatusChange={(s, m) => { setStatus(s); if(m) showNotification(s === AppStatus.ERROR ? 'error' : 'success', m); }}
-                    onTokenUpdate={(t) => setSheetState(prev => ({...prev, accessToken: t}))}
+                    // Removed onTokenUpdate prop as it's no longer needed
                 />
               </>
             ) : (
