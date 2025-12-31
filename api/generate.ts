@@ -1,93 +1,100 @@
-import { GoogleGenAI, Schema, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
+// api/generate.ts
+import { GoogleGenAI } from "@google/genai";
 
 export const config = {
-  runtime: 'edge', 
+  runtime: 'edge', // Use Edge to avoid 10s timeouts
 };
 
-const responseSchema: Schema = {
-  type: Type.OBJECT,
-  properties: {
-    primaryKeyword: { type: Type.STRING },
-    keywordDifficulty: { type: Type.NUMBER },
-    seoTitle: { type: Type.STRING },
-    secondaryKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-    metaDescription: { type: Type.STRING },
-    tags: { type: Type.ARRAY, items: { type: Type.STRING } },
-    category: { type: Type.ARRAY, items: { type: Type.STRING } }
-  },
-  required: ["primaryKeyword", "keywordDifficulty", "seoTitle", "secondaryKeywords", "metaDescription", "tags", "category"],
-};
+export default async function handler(req) {
+  // 1. Handle CORS (Optional but good for debugging)
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      },
+    });
+  }
 
-export default async function handler(req: Request) {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
   }
 
   try {
     const { topic, context, geo, contentType } = await req.json();
-    const apiKey = process.env.GEMINI_API_KEY;
 
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'Server Config Error: API Key missing' }), { status: 500 });
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error("Missing API Key on Server");
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    
+    // IMPORTANT: Switched to 1.5-flash for better Stability/Limits on Free Tier
+    const modelId = 'gemini-1.5-flash'; 
 
-    const prompt = `
-      **TASK:** Elite SEO Analysis for content type: "${contentType || 'Blog'}".
-      **TOPIC:** "${topic}"
-      **CONTEXT:** "${context || 'N/A'}"
-      **GEO:** "${geo || 'Global'}"
-      
-      **INSTRUCTIONS:**
-      1. Simulate a Google Search to find competitors.
-      2. Generate a UNIQUE, high-CTR SEO Title (never copy the context).
-      3. Analyze Search Intent and optimize metadata accordingly.
-      4. Return pure JSON matching the schema.
+    const systemInstruction = `
+      You are an Elite SEO Strategist. Generate unique, high-CTR metadata.
+      Strictly follow the JSON schema provided.
     `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+    const prompt = `
+      Generate SEO metadata for:
+      Topic: "${topic}"
+      Context: "${context || 'N/A'}"
+      Geo: "${geo || 'USA'}"
+      Type: "${contentType || 'Blog'}"
+      
+      Return ONLY raw JSON.
+    `;
+
+    // Define Schema (simplified for brevity, ensure matches your types)
+    const responseSchema = {
+      type: "OBJECT",
+      properties: {
+        primaryKeyword: { type: "STRING" },
+        keywordDifficulty: { type: "NUMBER" },
+        seoTitle: { type: "STRING" },
+        secondaryKeywords: { type: "ARRAY", items: { type: "STRING" } },
+        metaDescription: { type: "STRING" },
+        tags: { type: "ARRAY", items: { type: "STRING" } },
+        category: { type: "ARRAY", items: { type: "STRING" } },
+      },
+      required: ["primaryKeyword", "seoTitle", "metaDescription"]
+    };
+
+    const result = await ai.models.generateContent({
+      model: modelId,
       contents: prompt,
       config: {
+        systemInstruction: systemInstruction,
         responseMimeType: "application/json",
         responseSchema: responseSchema,
-        tools: [{ googleSearch: {} }],
-        safetySettings: [
-          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        ],
       },
     });
 
-    const candidate = response.candidates?.[0];
-    
-    // Extract Grounding Metadata
-    const groundingChunks = candidate?.groundingMetadata?.groundingChunks || [];
-    const groundingSources = groundingChunks.map((chunk: any) => ({
-      title: chunk.web?.title || 'Search Result',
-      uri: chunk.web?.uri || ''
-    })).filter((s: any) => s.uri);
+    const responseText = result.candidates[0]?.content?.parts[0]?.text;
 
-    // FIXED: .text is a getter, not a function()
-    const text = response.text; 
-    
-    if (!text) throw new Error("Empty response from AI");
+    if (!responseText) {
+      throw new Error("Empty response from AI");
+    }
 
-    const parsedData = JSON.parse(text);
-
-    return new Response(JSON.stringify({
-      ...parsedData,
-      groundingSources
-    }), {
+    return new Response(responseText, {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error("API Error:", error);
-    return new Response(JSON.stringify({ error: error.message || 'Generation failed' }), { status: 500 });
+    
+    // Return the actual error message to the frontend for debugging
+    const errorMessage = error.message || "Internal Server Error";
+    const status = errorMessage.includes("429") ? 429 : 500;
+
+    return new Response(JSON.stringify({ error: errorMessage }), {
+      status: status,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
