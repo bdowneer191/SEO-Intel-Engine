@@ -1,11 +1,11 @@
-// api/generate.ts
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 export const config = {
   runtime: 'edge',
 };
 
 export default async function handler(req) {
+  // 1. CORS Handling
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 200,
@@ -17,6 +17,7 @@ export default async function handler(req) {
     });
   }
 
+  // 2. Method Validation
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
   }
@@ -42,38 +43,29 @@ export default async function handler(req) {
       Geo: "${geo || 'USA'}"
       Type: "${contentType || 'Blog'}"
       
-      Return ONLY raw JSON with the following structure:
-      {
-        "primaryKeyword": "string",
-        "keywordDifficulty": number (0-100),
-        "intent": "string (Informational/Transactional/Navigational/Commercial)",
-        "seoTitle": "string (55-65 chars)",
-        "secondaryKeywords": ["string"],
-        "metaDescription": "string (150-155 chars)",
-        "tags": ["string"],
-        "category": ["string"]
-      }
+      Return ONLY raw JSON.
     `;
 
-    // Define Schema
+    // 3. Define Schema using strict SDK Types
     const responseSchema = {
-      type: "OBJECT",
+      type: Type.OBJECT,
       properties: {
-        primaryKeyword: { type: "STRING" },
-        keywordDifficulty: { type: "NUMBER" },
-        intent: { type: "STRING" },
-        seoTitle: { type: "STRING" },
-        secondaryKeywords: { type: "ARRAY", items: { type: "STRING" } },
-        metaDescription: { type: "STRING" },
-        tags: { type: "ARRAY", items: { type: "STRING" } },
-        category: { type: "ARRAY", items: { type: "STRING" } },
+        primaryKeyword: { type: Type.STRING },
+        keywordDifficulty: { type: Type.NUMBER },
+        intent: { type: Type.STRING },
+        seoTitle: { type: Type.STRING },
+        secondaryKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+        metaDescription: { type: Type.STRING },
+        tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+        category: { type: Type.ARRAY, items: { type: Type.STRING } },
       },
       required: ["primaryKeyword", "seoTitle", "metaDescription"]
     };
 
-    // Correct API call using the models property with full model version
+    // 4. API Call with Correct Model ID
+    // UPDATED: Using 'gemini-2.5-flash-lite' to fix 404/Deprecation error
     const result = await ai.models.generateContent({
-      model: 'gemini-1.5-flash-001',
+      model: 'gemini-2.5-flash-lite', 
       contents: prompt,
       config: {
         systemInstruction: systemInstruction,
@@ -83,8 +75,9 @@ export default async function handler(req) {
       },
     });
 
-    // Access the response text
-    const responseText = result.text;
+    // 5. Robust Text Extraction
+    // Attempts to get .text property first, falls back to candidate structure
+    const responseText = result.text || result.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!responseText) {
       throw new Error("Empty response from AI");
@@ -95,13 +88,18 @@ export default async function handler(req) {
       headers: { 'Content-Type': 'application/json' }
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("API Error:", error);
     
     const errorMessage = error.message || "Internal Server Error";
-    const status = errorMessage.includes("429") ? 429 : 500;
+    
+    // Detailed error handling for quota (429) or model missing (404)
+    const status = errorMessage.includes("429") ? 429 : (errorMessage.includes("404") ? 404 : 500);
 
-    return new Response(JSON.stringify({ error: errorMessage }), {
+    return new Response(JSON.stringify({ 
+        error: errorMessage,
+        details: status === 404 ? "Model deprecated/not found. Try updating model ID." : undefined
+    }), {
       status: status,
       headers: { 'Content-Type': 'application/json' }
     });
