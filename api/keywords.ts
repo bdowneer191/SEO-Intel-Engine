@@ -58,9 +58,9 @@ export default async function handler(req: Request) {
       ]
     }`;
 
-    // Use the correct API structure
+    // Use the correct API structure with full model version
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-1.5-flash-latest',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
