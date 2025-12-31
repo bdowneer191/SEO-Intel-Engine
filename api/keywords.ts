@@ -37,11 +37,6 @@ export default async function handler(req: Request) {
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    
-    // FIX: Use correct model initialization
-    const model = ai.getGenerativeModel({ 
-      model: 'gemini-1.5-flash-latest' 
-    });
 
     const prompt = `Generate 6-8 high-potential "Easy Win" SEO keyword variations for: "${topic}".
     
@@ -63,21 +58,19 @@ export default async function handler(req: Request) {
       ]
     }`;
 
-    // FIX: Use correct method call structure
-    const response = await model.generateContent({
-      contents: [{ 
-        role: "user", 
-        parts: [{ text: prompt }] 
-      }],
-      generationConfig: {
+    // Use the correct API structure
+    const response = await ai.models.generateContent({
+      model: 'gemini-1.5-flash',
+      contents: prompt,
+      config: {
         responseMimeType: "application/json",
         responseSchema: keywordIdeasSchema,
         temperature: 0.7,
       }
     });
 
-    // FIX: Access text correctly
-    const text = response.response.text();
+    // Access text property directly
+    const text = response.text;
     
     return new Response(text, {
       status: 200,
