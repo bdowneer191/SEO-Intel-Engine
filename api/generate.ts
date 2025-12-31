@@ -29,11 +29,6 @@ export default async function handler(req) {
     }
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    
-    // FIX: Use the correct model initialization
-    const model = ai.getGenerativeModel({ 
-      model: 'gemini-1.5-flash-latest' // Use -latest suffix
-    });
 
     const systemInstruction = `
       You are an Elite SEO Strategist. Generate unique, high-CTR metadata.
@@ -76,21 +71,20 @@ export default async function handler(req) {
       required: ["primaryKeyword", "seoTitle", "metaDescription"]
     };
 
-    // FIX: Use the correct method call structure
-    const result = await model.generateContent({
-      contents: [{ 
-        role: "user", 
-        parts: [{ text: prompt }] 
-      }],
-      systemInstruction: systemInstruction,
-      generationConfig: {
+    // Correct API call using the models property
+    const result = await ai.models.generateContent({
+      model: 'gemini-1.5-flash',
+      contents: prompt,
+      config: {
+        systemInstruction: systemInstruction,
         responseMimeType: "application/json",
         responseSchema: responseSchema,
         temperature: 0.7,
       },
     });
 
-    const responseText = result.response.text();
+    // Access the response text
+    const responseText = result.text;
 
     if (!responseText) {
       throw new Error("Empty response from AI");
