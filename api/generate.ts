@@ -2,11 +2,10 @@
 import { GoogleGenAI } from "@google/genai";
 
 export const config = {
-  runtime: 'edge', // Use Edge to avoid 10s timeouts
+  runtime: 'edge',
 };
 
 export default async function handler(req) {
-  // 1. Handle CORS (Optional but good for debugging)
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 200,
@@ -31,8 +30,10 @@ export default async function handler(req) {
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     
-    // IMPORTANT: Switched to 1.5-flash for better Stability/Limits on Free Tier
-    const modelId = 'gemini-1.5-flash'; 
+    // FIX: Use the correct model initialization
+    const model = ai.getGenerativeModel({ 
+      model: 'gemini-1.5-flash-latest' // Use -latest suffix
+    });
 
     const systemInstruction = `
       You are an Elite SEO Strategist. Generate unique, high-CTR metadata.
@@ -46,15 +47,26 @@ export default async function handler(req) {
       Geo: "${geo || 'USA'}"
       Type: "${contentType || 'Blog'}"
       
-      Return ONLY raw JSON.
+      Return ONLY raw JSON with the following structure:
+      {
+        "primaryKeyword": "string",
+        "keywordDifficulty": number (0-100),
+        "intent": "string (Informational/Transactional/Navigational/Commercial)",
+        "seoTitle": "string (55-65 chars)",
+        "secondaryKeywords": ["string"],
+        "metaDescription": "string (150-155 chars)",
+        "tags": ["string"],
+        "category": ["string"]
+      }
     `;
 
-    // Define Schema (simplified for brevity, ensure matches your types)
+    // Define Schema
     const responseSchema = {
       type: "OBJECT",
       properties: {
         primaryKeyword: { type: "STRING" },
         keywordDifficulty: { type: "NUMBER" },
+        intent: { type: "STRING" },
         seoTitle: { type: "STRING" },
         secondaryKeywords: { type: "ARRAY", items: { type: "STRING" } },
         metaDescription: { type: "STRING" },
@@ -64,17 +76,21 @@ export default async function handler(req) {
       required: ["primaryKeyword", "seoTitle", "metaDescription"]
     };
 
-    const result = await ai.models.generateContent({
-      model: modelId,
-      contents: prompt,
-      config: {
-        systemInstruction: systemInstruction,
+    // FIX: Use the correct method call structure
+    const result = await model.generateContent({
+      contents: [{ 
+        role: "user", 
+        parts: [{ text: prompt }] 
+      }],
+      systemInstruction: systemInstruction,
+      generationConfig: {
         responseMimeType: "application/json",
         responseSchema: responseSchema,
+        temperature: 0.7,
       },
     });
 
-    const responseText = result.candidates[0]?.content?.parts[0]?.text;
+    const responseText = result.response.text();
 
     if (!responseText) {
       throw new Error("Empty response from AI");
@@ -88,7 +104,6 @@ export default async function handler(req) {
   } catch (error) {
     console.error("API Error:", error);
     
-    // Return the actual error message to the frontend for debugging
     const errorMessage = error.message || "Internal Server Error";
     const status = errorMessage.includes("429") ? 429 : 500;
 
