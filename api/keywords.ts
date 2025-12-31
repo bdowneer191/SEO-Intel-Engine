@@ -31,22 +31,53 @@ export default async function handler(req: Request) {
   try {
     const { topic } = await req.json();
     const apiKey = process.env.GEMINI_API_KEY;
+    
+    if (!apiKey) {
+      throw new Error("Missing API Key");
+    }
+
     const ai = new GoogleGenAI({ apiKey });
+    
+    // FIX: Use correct model initialization
+    const model = ai.getGenerativeModel({ 
+      model: 'gemini-1.5-flash-latest' 
+    });
 
-    const prompt = `Generate 6-8 high-potential "Easy Win" SEO keyword variations for: "${topic}".`;
+    const prompt = `Generate 6-8 high-potential "Easy Win" SEO keyword variations for: "${topic}".
+    
+    Provide a mix of:
+    - Long-tail variations
+    - Question-based keywords
+    - "How to" variations
+    - Related topics
+    
+    Return ONLY valid JSON matching this structure:
+    {
+      "ideas": [
+        {
+          "keyword": "example keyword phrase",
+          "intent": "Informational",
+          "difficulty": "Low",
+          "volume": "Medium"
+        }
+      ]
+    }`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: prompt,
-      config: {
+    // FIX: Use correct method call structure
+    const response = await model.generateContent({
+      contents: [{ 
+        role: "user", 
+        parts: [{ text: prompt }] 
+      }],
+      generationConfig: {
         responseMimeType: "application/json",
         responseSchema: keywordIdeasSchema,
         temperature: 0.7,
       }
     });
 
-    // FIXED: .text is a getter, not a function()
-    const text = response.text;
+    // FIX: Access text correctly
+    const text = response.response.text();
     
     return new Response(text, {
       status: 200,
@@ -54,6 +85,7 @@ export default async function handler(req: Request) {
     });
 
   } catch (error: any) {
+    console.error("Keywords API Error:", error);
     return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }
 }
