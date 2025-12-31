@@ -24,6 +24,18 @@ const keywordIdeasSchema: Schema = {
 };
 
 export default async function handler(req: Request) {
+  // 1. CORS Handling (Essential for frontend access)
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      },
+    });
+  }
+
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
   }
@@ -58,9 +70,10 @@ export default async function handler(req: Request) {
       ]
     }`;
 
-    // Use the correct API structure with full model version
+    // 2. Updated Model ID for 2026 Availability
+    // Switched to 'gemini-2.5-flash-lite' to avoid 404s on retired models
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash-001',
+      model: 'gemini-2.5-flash-lite', 
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -69,9 +82,13 @@ export default async function handler(req: Request) {
       }
     });
 
-    // Access text property directly
-    const text = response.text;
+    // 3. Robust Text Extraction (Handles potential getter vs property differences)
+    const text = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text;
     
+    if (!text) {
+        throw new Error("Empty response from AI");
+    }
+
     return new Response(text, {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
@@ -79,6 +96,11 @@ export default async function handler(req: Request) {
 
   } catch (error: any) {
     console.error("Keywords API Error:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
-  }
-}
+    
+    // 4. Detailed Error Handling
+    const errorMessage = error.message || "Internal Server Error";
+    const status = errorMessage.includes("429") ? 429 : (errorMessage.includes("404") ? 404 : 500);
+
+    return new Response(JSON.stringify({ 
+        error: errorMessage,
+        details: status === 404 ? "Model deprecated/not found.
