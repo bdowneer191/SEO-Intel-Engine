@@ -73,7 +73,7 @@ export default async function handler(req) {
 
     // Correct API call using the models property with full model version
     const result = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-1.5-flash-001',
       contents: prompt,
       config: {
         systemInstruction: systemInstruction,
